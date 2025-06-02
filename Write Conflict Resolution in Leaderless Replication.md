@@ -44,3 +44,155 @@ Leaderless replication enables any node to accept writes, which can lead to conc
 
 ---
 
+# Conflict Resolution in Leaderless Replication
+
+This document summarizes common interview questions and answers related to conflict resolution strategies in leaderless replication setups, such as those used in DynamoDB and Cassandra.
+
+---
+
+## ❓ Interview Questions and Answers
+
+### 1. **What is conflict resolution in leaderless replication?**
+Conflict resolution refers to the process of resolving discrepancies that arise when concurrent writes happen across different replicas in a distributed system with no single leader.
+
+---
+
+### 2. **What are the common techniques used to resolve write conflicts?**
+- Last Write Wins (LWW)
+- Hybrid Logical Clocks (HLC)
+- Vector Clocks (VC)
+- Client-side Reconciliation
+- Read Repair
+- Siblings and Merkle Trees
+- CRDTs (Conflict-Free Replicated Data Types)
+
+---
+
+### 3. **How does Last Write Wins (LWW) work?**
+- Each write is assigned a timestamp (usually epoch time).
+- The write with the highest timestamp wins.
+- Simpler but prone to data loss under concurrent updates.
+
+**Example:**  
+Replica A → (value: "Alice", timestamp: 1000)  
+Replica B → (value: "Bob", timestamp: 999)  
+Merged → "Alice"
+
+---
+
+### 4. **What are the limitations of LWW?**
+- Risk of overwriting valid updates.
+- Timestamp collisions can cause non-deterministic outcomes.
+- Requires loosely synchronized clocks or hybrid logical clocks.
+
+---
+
+### 5. **What is Hybrid Logical Clock (HLC)?**
+- A combination of physical and logical clocks.
+- Each write has a (timestamp, counter) tuple.
+- Ensures monotonicity without perfect clock sync.
+
+**Example:**  
+A(1000, 5), B(1000, 7) → B wins.
+
+---
+
+### 6. **What happens if HLC timestamps match?**
+- Use the counter to break ties.
+- If still same, fall back to node ID or deterministic hash for tie-breaking.
+
+---
+
+### 7. **What are Vector Clocks (VC)?**
+- Each object keeps a vector of versions per replica.
+- Allows the system to detect concurrent writes.
+
+**Example:**
+
+```json
+{
+  "value": "Alice",
+  "vc": { "A": 3, "B": 1 }
+}
+```
+
+Another version:
+
+```json
+{
+  "value": "Bob",
+  "vc": { "A": 1, "B": 3 }
+}
+```
+
+These two are concurrent and need reconciliation.
+
+---
+
+### 8. **What happens when two vector clocks are concurrent?**
+- System cannot decide automatically which is newer.
+- Returns both versions to client for reconciliation (like in Dynamo).
+- Client writes back merged data.
+
+---
+
+### 9. **What is Read Repair?**
+- Upon a read, the client compares versions across replicas.
+- If discrepancies exist, repairs the outdated replicas with the correct data.
+- Happens in the background.
+
+---
+
+### 10. **What is hinted handoff?**
+- If a replica is down, another replica stores the write on its behalf.
+- Once the downed replica comes back, the hint is replayed.
+
+---
+
+### 11. **What are CRDTs and when are they used?**
+- CRDTs are data structures that automatically merge without conflicts.
+- Used when high availability and automatic resolution is needed.
+- Ideal for counters, sets, maps.
+
+**Examples:**
+- G-Counter, PN-Counter
+- OR-Set, LWW-Element-Set
+
+---
+
+### 12. **Which databases use these techniques?**
+| Database       | Conflict Resolution Techniques       |
+|----------------|--------------------------------------|
+| DynamoDB       | Vector Clocks, Client-side Merge     |
+| Cassandra      | LWW, HLC, Read Repair                |
+| Riak           | Vector Clocks, Siblings, CRDTs       |
+| CouchDB        | MVCC + Application-level merge       |
+| Redis (Cluster)| No built-in CR, relies on app logic  |
+
+---
+
+### 13. **What are the trade-offs of each strategy?**
+
+| Strategy       | Pros                          | Cons                              |
+|----------------|-------------------------------|-----------------------------------|
+| LWW            | Simple, fast                  | Can lose writes                   |
+| HLC            | Handles clock skew            | Needs HLC logic everywhere        |
+| VC             | Detects concurrency           | Requires metadata, client logic  |
+| CRDTs          | Automatic merge               | Not suitable for all data types  |
+| Read Repair    | Eventually consistent         | May have stale reads initially   |
+
+---
+
+### 14. **When would you use client-side conflict resolution?**
+- When automatic conflict resolution is not safe or feasible.
+- For example: user profile updates where merging needs domain knowledge.
+
+---
+
+## ✅ Summary
+
+Leaderless replication gives availability and fault tolerance, but requires careful conflict resolution. Different strategies are chosen based on use case, consistency needs, and tolerance for complexity.
+
+---
+
+
